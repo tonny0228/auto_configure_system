@@ -1,0 +1,145 @@
+# Debian default wu-ftpd `ftpaccess' configuration file, derived from
+# the `ftpaccess.heavy' example in wu-ftpd sources.
+# For more options/commands see ftpaccess(5) and /usr/share/doc/wu-ftpd/*.
+
+# Some of the example message files have been translated to Spanish,
+# and are available in /usr/share/doc/wu-ftpd/examples/.
+# (thanks to Javier Fernandez-Sanguino Pen~a <jfs@dat.etsit.upm.es>
+
+
+# E-mail address of the FTP admin, can be accessed via the %E in messages.
+email    tonny0228@gmail.com
+
+# Which UIDs and GIDs may, and which may not use the FTP service.
+deny-uid    *
+deny-gid    *
+
+allow-uid    ftp    tonny
+allow-gid    ftp    tonny
+
+# Maximum number of retries after login failures, before disconnecting.
+loginfails    3
+
+# Can users see anything else but their home directory
+restricted-uid    *
+restricted-gid    *
+
+unrestricted-uid    tonny
+unrestricted-gid    tonny
+
+# Allow use of private file for SITE GROUP and SITE GPASS?
+private    no
+
+# What kind of greeting to give.
+greeting    brief
+
+# Banner to show immediately on connect.
+banner    /etc/wu-ftpd/welcome.msg
+
+# Deny access to specified hosts, with message.
+deny    /etc/wu-ftpd/denied.hosts    /etc/wu-ftpd/deny.msg.deny
+# !nameserved means hosts that can't be resolved.
+#deny	!nameserved	/etc/wu-ftpd/msg.nodns
+
+# Various DNS related options.
+#dns refuse_mismatch <filename> [override]
+#dns refuse_no_reverse <filename> [override]
+#dns resolveroptions [options]
+
+# Class	name	typelist		addresses
+class    all      real,anonymous,guest    *
+class    local    real                    10.*.*.*  172.[16-31].*.*  192.168.*.*  localhost
+class    anony    anonymous               10.*.*.*  172.[16-31].*.*  192.168.*.*  localhost
+class    remote   guest                   !10.*.*.* !172.[16-31].*.* !192.168.*.* !localhost *
+
+# Limit	who	how many	date/time	message file
+limit    local     5    Any    /etc/wu-ftpd/msg.toomany
+limit    remote    2    Any    /etc/wu-ftpd/msg.toomany
+limit    anony     3    Any    /etc/wu-ftpd/msg.toomany
+limit    all       10   Any    /etc/wu-ftpd/msg.toomany
+
+# The files that wu-ftpd will recognize as must-be-read, and display them.
+message    /welcome.msg    login
+message    .message        cwd=*
+
+# The files that wu-ftpd will recognize as should-be-read, and warn about them.
+readme    README*    login
+readme    README*    cwd=*
+
+# Whether to use compression.
+compress    yes    local remote all
+tar         yes    local remote all
+
+# Logging of actions.
+log    commands    anonymous
+log    transfers   anonymous    inbound,outbound
+log    security    anonymous
+
+# The file wu-ftpd will check to see if the server is going to be shut down.
+# (use ftpshut to generate it)
+shutdown    /etc/wu-ftpd/shut.msg
+
+# These files are marked unretrievable
+noretrieve    /etc/passwd    /etc/group
+noretrieve    core
+
+# The directory to which anonymous FTP user will chroot to.
+# Note: if you change this {add,rm}ftpuser may stop functioning.
+anonymous-root    /home/tonny/Downloads/ftp    anony
+
+# Password verification for the anonymous FTP user.
+#		<none|trivial|rfc822>  [<enforce|warn>]
+passwd-check    rfc822    warn
+
+# Deny access to specified browsers for the anonymous FTP user.
+deny-email    IE?0User@
+deny-email    mozilla@
+
+# Maximum connection time in minutes
+limit-time    anonymous    30
+limit-time    guest        100
+
+# Some permissions for the anonymous FTP user.
+# All the following default to "yes" for everybody
+rename    no    anonymous
+delete    no    anonymous
+overwrite no    anonymous
+chmod     no    anonymous
+umask     no    anonymous
+
+# Anonymous FTP directories upload settings
+# 	anon-ftp-root	path		allow?	owner	group	mode	dirs?
+upload    /home/tonny/Downloads/ftp    *           no
+upload    /home/tonny/Downloads/ftp    /Uploads    yes    tonny    tonny    0666    nodirs
+
+# What can a filename contain (this /etc is under the anonymous-FTP root)
+path-filter    anonymous    /etc/wu-ftpd/path.msg    ^[-+A-Za-z0-9_.]*$ ^\. ^-
+
+# Shortcuts for anonymous FTP incoming (note: the ':' isn't obligatory)
+alias    down:    /home/tonny/Downloads/ftp/Downloads
+alias    up:      /home/tonny/Downloads/ftp/Uploads
+
+cdpath    /home/tonny/Downloads/ftp
+
+# The directory to which guest FTP user will chroot to.
+# guest-root    /home/tonny/Downloads/ftp
+
+guestuser    *
+guestgroup   *
+realuser     tonny
+realgroup    tonny
+
+hostname    skipjack
+
+nice    -5    local
+nice    0     remote
+nice    10    anony
+
+defumask    022    local
+defumask    022    remote
+defumask    002    anony
+
+passive          address    0.0.0.0    0.0.0.0/0
+passive	ports    0.0.0.0/0  65501      65510
+
+file-limit    in    104857600    anony

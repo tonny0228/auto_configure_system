@@ -1,0 +1,159 @@
+#!/bin/sh
+
+TEMPFILE=`mktemp /tmp/temp.XXXXXX`
+F0HOME="/home/fiyang"
+MSG_TITLE="fiyang 工具箱"
+
+MSG_ERROR()
+{
+  zenity --warning --text="未知错误"
+}
+
+CncIsRun()
+{
+  mount | grep vfsF0 && return 0
+  return 1
+}
+
+CncIsClean()
+{
+  lsmod | grep rtai_hal && return 1
+  return 0
+}
+
+stop_cnc()
+{
+  killall ws32new
+  [ ! -p /tmp/fidpipe ] && return 1
+  #echo 1 > /tmp/fidpipe
+  /home/fiyang/cnc/CncControllerClient halt
+  while ! CncIsClean
+  do
+    sleep 1
+  done
+  sudo umount $F0HOME/set
+}
+
+must_stop_cnc()
+{
+  local maxtime=10
+
+  killall ws32new
+  [ ! -p /tmp/fidpipe ] && return 1
+  echo 1 > /tmp/fidpipe
+
+  while ! CncIsClean
+  do
+    sleep 1
+    maxtime=$((maxtime-1))
+    [ $maxtime -eq 0 ] && break
+  done
+
+  sudo umount $F0HOME/set
+  rm -rf /tmp/fidpipe
+}
+
+start_cnc()
+{
+  cd $F0HOME/cnc
+
+  pidof CncController || sudo /home/fiyang/cnc/CncController
+  #sudo ./vai > ../program/CONSOLE.CNC 2>&1 &
+  /home/fiyang/cnc/CncControllerClient start
+  while ! CncIsRun
+  do
+    sleep 1
+  done
+  pidof  pcmanfm &&
+  sudo -u fiyang DISPLAY=:0 LC_ALL=zh_CN.UTF-8 /home/fiyang/bin/fiyang-ui
+}
+
+control_cnc()
+{
+  if CncIsRun; then 
+    stop_cnc
+  else
+    start_cnc
+  fi
+}
+
+auto_backup_custom()
+{
+  local BACKUPDIR
+  local FILENAME
+  BACKUPDIR=/backup/custom/auto
+  FILENAME=$BACKUPDIR/custom-`date +%F`.tgz
+  [ ! -d $BACKUPDIR ] && mkdir -p $BACKUPDIR
+  [ -f $FILENAME ] && return 0
+  cd $F0HOME
+  tar -zcvf $FILENAME custom/*
+
+  # remove backup files before 100 days ago
+  find $BACKUPDIR -type f -mtime +100 -exec rm -rf {} \;
+}
+
+backup_custom()
+{
+  zenity --title="输入备份的文件名" --file-selection --filename=/backup/custom/custom-`date +%F`.tgz --save > $TEMPFILE
+  retval=$?
+  FILENAME="$(cat $TEMPFILE)"
+
+  if [ $retval -eq 1 ]
+  then
+    return
+  fi
+
+  cd $F0HOME
+  tar -zcvf $FILENAME custom/*
+}
+
+restore_custom()
+{
+  zenity --title="选择要恢复的文件" --file-selection --filename=/backup/custom/custom-`date +%F`.tgz > $TEMPFILE
+  retval=$?
+  FILENAME="$(cat $TEMPFILE)"
+
+  if [ $retval -eq 1 ]
+  then
+    return
+  fi
+
+  if CncIsRun; then 
+    zenity --warning --text="准备恢复配置，即将关闭cnc，继续吗？"
+    retval=$?
+    if [ $retval -eq 1 ]
+    then
+      return
+    fi
+    stop_cnc
+  fi
+
+  rm -rf $F0HOME/custom/*
+  tar -zxvf $FILENAME -C $F0HOME
+
+  CUSTOM_UPDATE=$F0HOME/custom/.custom-update.tgz
+  [ -f $CUSTOM_UPDATE ] &&
+  tar -zxvf $CUSTOM_UPDATE -C $F0HOME/custom/
+}
+
+backup_logfile()
+{
+  zenity --title="输入备份的文件名" --file-selection --filename=/backup/logfile/logfile-`date +%F`.tgz --save > $TEMPFILE
+  retval=$?
+  FILENAME="$(cat $TEMPFILE)"
+
+  if [ $retval -eq 1 ]
+  then
+    return
+  fi
+
+  cd $F0HOME
+  dmesg > dmesg
+  sudo chmod 644 /var/log/messages
+  tar -zcvf $FILENAME dmesg VERSION program custom/* /var/log/messages --exclude program/.system
+}
+
+ffbload()
+{
+  sudo DISPLAY=:0 $HOME/ffb/FfbLoad.sh
+}

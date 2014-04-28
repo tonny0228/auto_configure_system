@@ -1,0 +1,100 @@
+#!/bin/sh
+
+REMOTEPROG=remotetran
+
+REMOTEHOME=/home/hscroot/
+LOCALHOME=/home/tonny/
+
+RSYNC="rsync -AEXhlpqrtu --inplace --executability --human-readable --progress"
+SSHMOUNT="\${LOCALHOME}.bin/qc mount "
+REMOTERUN="\${LOCALHOME}.bin/qc run"
+
+REMOTEWORKDIR=${REMOTEHOME}tonny/
+LOCALWORKDIR=${LOCALHOME}IBM/work/
+LOCALDESDIR=${LOCALWORKDIR}des/
+LOCALJARDESDIR=${LOCALDESDIR}jar/
+LOCALEXEDESDIR=${LOCALDESDIR}exe/
+
+QCCONF=/home/tonny/.qc.conf
+
+MOUNTFLAG=tmp
+QCFILTER=hscroot
+
+[ -f ${LOCALHOME}.bin/basefunc ] && . ${LOCALHOME}.bin/basefunc || { echo "File ${LOCALHOME}.bin/basefunc not found !"; exit 1; }
+
+CMVCLIST="$*"
+errfmtcmvclist=""
+okfmtcmvclist=""
+for cmvc in $CMVCLIST
+do
+  echo $cmvc | grep -E ^[1-9][0-9]\{5,5\}$ > /dev/null && okfmtcmvclist="$cmvc $okfmtcmvclist" || errfmtcmvclist="$cmvc $errfmtcmvclist" 
+done
+[ -z "$errfmtcmvclist" ] || warn "Found format error in $errfmtcmvclist!" 
+[ -z "$okfmtcmvclist" ] && die "Not found any right cmvc format in $CMVCLIST !" 
+
+okjarlist=""
+okexelist=""
+for cmvc in $okfmtcmvclist
+do
+  [ $(find $LOCALJARDESDIR -name sb$cmvc.jar | wc -l) -ne 0 ] && okjarlist="${LOCALJARDESDIR}sb$cmvc.jar $okjarlist"
+  [ $(find $LOCALEXEDESDIR -name "*.$cmvc.exe" | wc -l) -ne 0 ] && okexelist="$(find $LOCALEXEDESDIR -name *.$cmvc.exe) $okexelist"
+done
+
+[ -z "$okjarlist" -a -z "$okexelist" ] && die "Not found any sandbox in $okfmtcmvclist!" 
+ 
+[ ! -f $QCCONF ] && die "File $QCCONF not found !" || MAXCHOICE=$(grep -c $QCFILTER $QCCONF) 
+[ $MAXCHOICE -eq 0 ] && die "No hmc found in $QCCONF !"
+HMCLIST=$(awk '{ if ($2 == "'$QCFILTER'") { print $1 } }' $QCCONF)
+idx=0
+for hmc in $HMCLIST
+do
+  HMCARRAY[$idx]=$hmc
+
+  idx=$(($idx + 1))
+done
+HMCARRAY[$idx]="EXIT"
+
+choice=-1
+until [ $choice -ge 0 -a $choice -le $MAXCHOICE ] 
+do
+  echo "CHOICE          HMC" 
+
+  for ((idx=0; idx<${#HMCARRAY[@]}; idx++))
+  do
+      [ $idx -lt 10 ] && echo "  $idx            ${HMCARRAY[$idx]}" || echo " $idx            ${HMCARRAY[$idx]}"
+  done
+
+  echo -en "\nPlease select one choice you want to run your sandbox[0-$MAXCHOICE]:" 
+  read choice
+done
+
+[ $choice -eq $MAXCHOICE ] && die "Quit without transfermation !"
+
+hmc=${HMCARRAY[$choice]}
+MOUNTWORKDIR=$LOCALHOME$hmc/
+MOUNTJARDIR=${MOUNTWORKDIR}tonny/jar/
+MOUNTEXEDIR=${MOUNTWORKDIR}tonny/exe/
+
+eval [ ! -d $MOUNTWORKDIR$MOUNTFLAG ] && eval $SSHMOUNT $hmc
+eval [ ! -d $MOUNTWORKDIR$MOUNTFLAG ] && eval die "Can't mount hmc $hmc in $MOUNTWORKDIR !"
+eval [ ! -d $MOUNTJARDIR ] &&  eval mkdir -p $MOUNTJARDIR
+eval [ ! -d $MOUNTJARDIR ] && eval die  die "Can't create jar directory $MOUNTJARDIR !"
+eval [ ! -d $MOUNTEXEDIR ] &&  eval mkdir -p $MOUNTEXEDIR
+eval [ ! -d $MOUNTEXEDIR ] && eval die  die "Can't create exe directory $MOUNTEXEDIR !"
+
+errtranjarlist=""
+oktranjarlist=""
+for jar in $okjarlist
+do
+  $RSYNC $jar $MOUNTJARDIR && oktranjarlist="$jar $oktranjarlist" || errtranjarlist="$jar $errtranjarlist"
+done
+
+errtranexelist=""
+oktranexelist=""
+for exe in $okexelist
+do
+  $RSYNC $exe $MOUNTEXEDIR && oktranexelist="$exe $oktranexelist" || errtranexelist="$exe $errtranexelist"
+done
+
+[ -z $errtranjarlist -a -z $errtranexelist] || warn "Error found when transfer sandbox in $errtranjarlist$errtranexelist!" 
+[ -z $oktranjarlist -a -z $oktranexelist ] && die "No sandbox transfer successfully in $okjarlist$okexelist!" || echo "Transfer sandbox successfully in $oktranjarlist$oktranexelist!" 

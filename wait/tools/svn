@@ -1,0 +1,248 @@
+#!/bin/sh
+
+PROG=$(basename "$0")
+USAGE="$PROG [-cnrh] action filename"
+
+REMOTEHOST=gb
+
+REMOTEHOME=/.../ssd.sanjose.ibm.com/fs/home/tangweit/
+LOCALHOME=/home/tonny/
+
+MCLIST="/mc/R0.CPSS/cur/cmvc/tools/mc/mcList -r \$RELEASE -c \$COMPONENT -include \$FIELDLIST -f \$FILENAME"
+FILE="/mc/R0.CPSS/cur/cmvc/tools/File -family \$FAMILY -release \$RELEASE"
+RSYNC="rsync -AEXghlopqrtu --inplace --executability --human-readable --progress --chmod=ugo=rwX"
+SSHMOUNT="\${LOCALHOME}.bin/qc mount "
+REMOTERUN="\${LOCALHOME}.bin/qc run"
+
+REMOTEWORKDIR=${REMOTEHOME}dev2000/mc/
+MOUNTDIR=$LOCALHOME$REMOTEHOST/
+MOUNTWORKDIR=${MOUNTDIR}dev2000/mc/
+LOCALWORKDIR=${LOCALHOME}IBM/work/src/
+
+MOUNTFLAG=dev2000
+GREPFILTER="Invoke|tangweit"
+
+[ -f ${LOCALHOME}.bin/basefunc ] && . ${LOCALHOME}.bin/basefunc || { echo "File ${LOCALHOME}.bin/basefunc not found !"; exit 1; }
+
+[ ! -d $MOUNTDIR$MOUNTFLAG ] && eval $SSHMOUNT ${REMOTEHOST}
+[ ! -d $MOUNTDIR$MOUNTFLAG ] && die "Can't mount remote host $REMOTEHOST in $MOUNTDIR !"
+[ ! -d $LOCALWORKDIR ] && mkdir $LOCALWORKDIR 
+[ ! -d $LOCALWORKDIR ] && die "Can't create local work directory $LOCALWORKDIR !"
+
+while getopts ":hc:n:r:" Option
+do
+  case $Option in
+    c )
+        COMPONENT=$OPTARG
+        ;;
+    n )
+        NUMBER=$OPTARG
+        ;;
+    r )
+        RELEASE=$OPTARG
+        ;;
+    h )
+        usage
+        ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+FAMILY="mc"
+RELEASE=${RELEASE:-HMC7a.CPSS R14n.CPSS HMC6e.CPSS R10g.CPSS}
+COMPONENT=${COMPONENT:-Microcode-rs-hmc_cda Microcode-rs-lpr_lps Microcode-rs-hmc_cas}
+NUMBER=${NUMBER:-747474}
+FIELDLIST="22 24 5 20"
+
+[ -z "$1" -o -z "$2" ] && usage
+
+ACTION=$( printf "%s" "$1" | tr 'A-Z' 'a-z' )
+FILENAME="$2"
+
+case $ACTION in
+"info" )
+  mclistinfo=`mktemp /tmp/mclistinfo.XXXXXX`
+
+  eval echo "Invoke $MCLIST in dfs $REMOTEHOST !"
+
+  eval $REMOTERUN $REMOTEHOST $MCLIST > $mclistinfo 2>&1
+
+  [ $? -eq 0 ] && cat $mclistinfo | grep -Ev $GREPFILTER || { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run $MCLIST in dfs $REMOTEHOST !"; }
+
+  rm -f $mclistinfo
+
+  ;;
+"checkin" | "ci" )
+  mclistinfo=`mktemp /tmp/mclistinfo.XXXXXX`
+
+  { export FAMILY RELEASE COMPONENT NUMBER FIELDLIST; ${LOCALHOME}.bin/svn info $FILENAME; }  > $mclistinfo 2>&1
+
+  [ $? -ne 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; }
+
+  num=$(grep -E " [1-9][0-9]? files? found." $mclistinfo | awk '{ print $1 }')
+  [ -z $num ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; } 
+  [ $num -eq 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Can't find file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+  [ $num -gt 1 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Found more than one file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+
+  FILENAME=$(grep -Ev $GREPFILTER $mclistinfo | grep $FILENAME | awk '{ print $1 }')
+
+  rm -f $mclistinfo
+
+  [ ! -f $LOCALWORKDIR$NUMBER/$FILENAME.des ] && die "Can't found fixed file $LOCALWORKDIR$NUMBER/$FILENAME.des !"
+  [ ! -f $LOCALWORKDIR$NUMBER/$FILENAME ] && die "Can't found fixed file $LOCALWORKDIR$NUMBER/$FILENAME !"
+  #diff $LOCALWORKDIR$NUMBER/$FILENAME.des $LOCALWORKDIR$NUMBER/$FILENAME > /dev/null 2>&1 || die "Difference found between $LOCALWORKDIR$NUMBER/$FILENAME.des $LOCALWORKDIR$NUMBER/$FILENAME !"  
+
+  rm -rf $MOUNTWORKDIR/$RELEASE/usr/cmvc/* || die "Can't clear cmvc directory in $MOUNTWORKDIR$RELEASE/usr/cmvc/ !"
+
+  $RSYNC $LOCALWORKDIR$NUMBER/* $MOUNTWORKDIR$RELEASE/usr/cmvc/ || eval die "Rsync error when run $RSYNC $LOCALWORKDIR$NUMBER/* $MOUNTWORKDIR$RELEASE/usr/cmvc/ !"
+
+  [ ! -f $MOUNTWORKDIR/$RELEASE/usr/cmvc/$FILENAME ] && eval die "File $MOUNTWORKDIR/$RELEASE/usr/cmvc/$FILENAME not found after rsync !"
+
+  checkininfo=`mktemp /tmp/checkininfo.XXXXXX`
+
+  eval echo "Invoke $FILE -defect $NUMBER -checkin $FILENAME in dfs $REMOTEHOST !"
+
+  eval $REMOTERUN $REMOTEHOST "\". ~/.profile;$FILE -defect $NUMBER -checkin $FILENAME\"" > $checkininfo 2>&1
+
+  [ $? -ne 0 ] && { cat $checkininfo | grep -Ev $GREPFILTER; rm -f $checkininfo; eval die "Error found when run $FILE -checkin $FILENAME in dfs $REMOTEHOST !"; }
+
+  #echo "" && tail -n $(($(wc -l $unlockinfo | awk '{ print $1 }') - $(grep -n "File $FILENAME" $unlockinfo | awk -F: '{ print $1 }') + 1)) $unlockinfo | sed 's/^[0-9]*-[0-9]* //g' | sed 's/^ [ ]*/ /g' | sed 's/[ ]*$//g' | tr -d '\n' | tr -d '\r' && echo ""
+
+  rm -f $checkininfo
+
+  ;;
+"checkout" | "co" )
+  mclistinfo=`mktemp /tmp/mclistinfo.XXXXXX`
+
+  { export FAMILY RELEASE COMPONENT NUMBER FIELDLIST; ${LOCALHOME}.bin/svn info $FILENAME; }  > $mclistinfo 2>&1
+
+  [ $? -ne 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; }
+
+  num=$(grep -E " [1-9][0-9]? files? found." $mclistinfo | awk '{ print $1 }')
+  [ -z $num ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; } 
+  [ $num -eq 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Can't find file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+  [ $num -gt 1 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Found more than one file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+
+  FILENAME=$(grep -Ev $GREPFILTER $mclistinfo | grep $FILENAME | awk '{ print $1 }')
+
+  rm -f $mclistinfo
+
+  [ ! -f $LOCALWORKDIR$NUMBER/$FILENAME.des ] && die "Can't found fixed file $LOCALWORKDIR$NUMBER/$FILENAME.des !"
+
+  checkoutinfo=`mktemp /tmp/checkoutinfo.XXXXXX`
+
+  eval echo "Invoke $FILE -checkout $FILENAME in dfs $REMOTEHOST !"
+
+  eval $REMOTERUN $REMOTEHOST "\"rm -rf ${REMOTEWORKDIR}$RELEASE/usr/cmvc/*;. ~/.profile;$FILE -checkout $FILENAME\"" > $checkoutinfo 2>&1
+
+  [ $? -ne 0 ] && { cat $checkoutinfo | grep -Ev $GREPFILTER; rm -f $checkoutinfo; eval die "Error found when run $FILE -extract $FILENAME in dfs $REMOTEHOST !"; }
+
+  [ ! -d $LOCALWORKDIR$NUMBER ] && mkdir $LOCALWORKDIR$NUMBER || find $LOCALWORKDIR$NUMBER/ -name "*.java" | xargs rm -rf || { export FAMILY RELEASE COMPONENT NUMBER FIELDLIST; ${LOCALHOME}.bin/svn unlock $FILENAME; rm -f $checkoutinfo; die "Can't clear java source file in $LOCALWORKDIR$NUMBER/ !"; }
+  [ ! -d $LOCALWORKDIR$NUMBER ] && { export FAMILY RELEASE COMPONENT NUMBER FIELDLIST; ${LOCALHOME}.bin/svn unlock $FILENAME; rm -f $checkoutinfo; die "Local work diectory $LOCALWORKDIR$NUM/ does't exist !"; }
+
+  $RSYNC $MOUNTWORKDIR$RELEASE/usr/cmvc/* $LOCALWORKDIR$NUMBER/ || { export FAMILY RELEASE COMPONENT NUMBER FIELDLIST; ${LOCALHOME}.bin/svn unlock $FILENAME; rf -f $checkoutinfo; eval die "Rsync error when run $RSYNC $MOUNTWORKDIR$RELEASE/usr/cmvc/* $LOCALWORKDIR$NUMBER/ !"; }
+
+  [ ! -f $LOCALWORKDIR$NUMBER/$FILENAME ] && { export FAMILY RELEASE COMPONENT NUMBER FIELDLIST; ${LOCALHOME}.bin/svn unlock $FILENAME; cat $checkoutinfo | grep -Ev $GREPFILTER; rm -f $checkoutinfo; eval die "File $LOCALWORKDIR$NUMBER/$FILENAME not found after rsync !"; } 
+
+  rm -f $checkoutinfo
+
+  vimdiff $LOCALWORKDIR$NUMBER/$FILENAME $LOCALWORKDIR$NUMBER/$FILENAME.des
+
+  ;;
+"extract" | "ext" )
+  mclistinfo=`mktemp /tmp/mclistinfo.XXXXXX`
+
+  { export FAMILY RELEASE COMPONENT NUMBER FIELDLIST; ${LOCALHOME}.bin/svn info $FILENAME; }  > $mclistinfo 2>&1
+
+  [ $? -ne 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; }
+
+  num=$(grep -E " [1-9][0-9]? files? found." $mclistinfo | awk '{ print $1 }')
+  [ -z $num ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; } 
+  [ $num -eq 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Can't find file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+  [ $num -gt 1 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Found more than one file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+
+  FILENAME=$(grep -Ev $GREPFILTER $mclistinfo | grep $FILENAME | awk '{ print $1 }')
+
+  rm -f $mclistinfo
+
+  extractinfo=`mktemp /tmp/extractinfo.XXXXXX`
+
+  eval echo "Invoke $FILE -extract $FILENAME in dfs $REMOTEHOST !"
+
+  eval $REMOTERUN $REMOTEHOST "\"rm -rf ${REMOTEWORKDIR}$RELEASE/usr/cmvc/*;. ~/.profile;$FILE -extract $FILENAME\"" > $extractinfo 2>&1
+
+  [ $? -ne 0 ] && { cat $extractinfo | grep -Ev $GREPFILTER; rm -f $extractinfo; eval die "Error found when run $FILE -extract $FILENAME in dfs $REMOTEHOST !"; }
+
+  [ ! -d $LOCALWORKDIR$NUMBER ] && mkdir $LOCALWORKDIR$NUMBER || find $LOCALWORKDIR$NUMBER/ -name "*.java" | xargs rm -rf || { rm -f $extractinfo; die "Can't clear java source file in $LOCALWORKDIR$NUMBER/ !"; }
+  [ ! -d $LOCALWORKDIR$NUMBER ] && { rm -f $extractinfo; die "Local work diectory $LOCALWORKDIR$NUMMBER/ doesn't exist !"; }
+
+  $RSYNC $MOUNTWORKDIR$RELEASE/usr/cmvc/* $LOCALWORKDIR$NUMBER/ || { rm -f $extractinfo; eval die "Rsync error when run $RSYNC $MOUNTWORKDIR$RELEASE/usr/cmvc/* $LOCALWORKDIR$NUMBER/ !"; }
+
+  [ ! -f $LOCALWORKDIR$NUMBER/$FILENAME ] && { cat $extractinfo | grep -Ev $GREPFILTER; rm -f $extractinfo; eval die "File $LOCALWORKDIR$NUMBER/$FILENAME not found after rsync !"; } 
+
+  rm -f $extractinfo
+
+  vi $LOCALWORKDIR$NUMBER/$FILENAME
+
+  ;;
+"undo" )
+  mclistinfo=`mktemp /tmp/mclistinfo.XXXXXX`
+
+  { export FAMILY RELEASE COMPONENT NUMBER FIELDLIST; ${LOCALHOME}.bin/svn info $FILENAME; } > $mclistinfo 2>&1
+
+  [ $? -ne 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; }
+
+  num=$(grep -E " [1-9][0-9]? files? found." $mclistinfo | awk '{ print $1 }')
+  [ -z $num ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; } 
+  [ $num -eq 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Can't find file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+  [ $num -gt 1 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Found more than one file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+
+  FILENAME=$(grep -Ev $GREPFILTER $mclistinfo | grep $FILENAME | awk '{ print $1 }')
+
+  rm -f $mclistinfo
+
+  undoinfo=`mktemp /tmp/undoinfo.XXXXXX`
+
+  eval echo "Invoke $FILE -undo $FILENAME in dfs $REMOTEHOST !"
+
+  eval $REMOTERUN $REMOTEHOST "\". ~/.profile;$FILE -undo $FILENAME\"" > $undoinfo 2>&1
+  cat $undoinfo
+
+  [ $? -ne 0 ] && { cat $undoinfo | grep -Ev $GREPFILTER; rm -f $undoinfo; eval die "Error found when run $FILE -undo $FILENAME in dfs $REMOTEHOST !"; }
+
+  rm -f $unfoinfo
+
+  ;;
+"unlock" )
+  mclistinfo=`mktemp /tmp/mclistinfo.XXXXXX`
+
+  { export FAMILY RELEASE COMPONENT NUMBER FIELDLIST; ${LOCALHOME}.bin/svn info $FILENAME; } > $mclistinfo 2>&1
+
+  [ $? -ne 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; }
+
+  num=$(grep -E " [1-9][0-9]? files? found." $mclistinfo | awk '{ print $1 }')
+  [ -z $num ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Error found when run ${LOCALHOME}.bin/svn info $FILENAME !"; } 
+  [ $num -eq 0 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Can't find file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+  [ $num -gt 1 ] && { cat $mclistinfo | grep -Ev $GREPFILTER; rm -f $mclistinfo; eval die "Found more than one file $FILENAME when run $MCLIST in dfs $REMOTEHOST !"; } 
+
+  FILENAME=$(grep -Ev $GREPFILTER $mclistinfo | grep $FILENAME | awk '{ print $1 }')
+
+  rm -f $mclistinfo
+
+  unlockinfo=`mktemp /tmp/unlockinfo.XXXXXX`
+
+  eval echo "Invoke $FILE -unlock $FILENAME in dfs $REMOTEHOST !"
+
+  eval $REMOTERUN $REMOTEHOST "\". ~/.profile;$FILE -unlock $FILENAME\"" > $unlockinfo 2>&1
+
+  [ $? -ne 0 ] && { cat $unlockinfo | grep -Ev $GREPFILTER; rm -f $unlockinfo; eval die "Error found when run $FILE -unlock $FILENAME in dfs $REMOTEHOST !"; }
+
+  echo "" && tail -n $(($(wc -l $unlockinfo | awk '{ print $1 }') - $(grep -n "File $FILENAME" $unlockinfo | awk -F: '{ print $1 }') + 1)) $unlockinfo | sed 's/^[0-9]*-[0-9]* //g' | sed 's/^ [ ]*/ /g' | sed 's/[ ]*$//g' | tr -d '\n' | tr -d '\r' && echo ""
+
+  rm -f $unlockinfo
+
+  ;;
+* )
+  usage
+  ;;
+esac

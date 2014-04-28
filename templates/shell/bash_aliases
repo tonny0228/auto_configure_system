@@ -1,0 +1,21 @@
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias .....='cd ../../../..'
+alias ......='cd ../../../../..'
+
+alias ll='ls -lF --color=auto'
+alias la='ls -AlF --color=auto'
+
+alias t='todo -d ~/.todo/config'
+
+alias c='clear'
+
+alias upd='sudo apt-get update'
+alias sea='apt-cache search'
+alias ins='sudo apt-get install --force-yes --yes'
+alias rem='sudo apt-get purge --force-yes --yes'
+
+alias grep='grep --color=auto'
+
+alias cdd='CDDIR=$(pwd)'

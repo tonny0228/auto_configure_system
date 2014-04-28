@@ -1,0 +1,227 @@
+#!/bin/sh
+
+# ##########################################################
+# Base variable
+# ##########################################################
+
+ROOTDIR=/home/tonny/.personal/Dropbox/Backup/ubuntu
+TRFN=buildenv.trc
+
+# ##########################################################
+# Main starts here.
+# ##########################################################
+
+echo "\n ================ Start: build work environment $(date) ============== " >>${ROOTDIR}/log/${TRFN} 2>&1
+echo "Command Line: $0 $@" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+# Update login shell profile
+#-----------------------------------------------------------
+if [ -f ${HOME}/.profile -a ! -L ${HOME}/.bin ]; then
+  msg="Update login shell profile"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/bin ${HOME}/.bin >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  [ `grep -c "PATH=\"\$HOME/.bin:\$PATH\"" ${HOME}/.profile 2>>${ROOTDIR}/log/${TRFN}` -eq 0 ] && echo "\n# set PATH so it includes user's private .bin if it exists\nif [ -d \"\$HOME/.bin\" ]; then\n    PATH=\"\$HOME/.bin:\$PATH\"\nfi" >>${HOME}/.profile
+fi
+
+# Update logout shell profile
+#-----------------------------------------------------------
+if [ -f ${HOME}/.bash_logout ]; then
+  if [ `grep -c "qc umount all" ${HOME}/.bash_logout 2>>${ROOTDIR}/log/${TRFN}` -eq 0 ]; then
+    msg="Update logout shell profile for qc clear"
+    timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+    echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+    echo "\nif [ \"\$SHLVL\" = 1 ]; then\n    qc umount all\nfi" >>${HOME}/.bash_logout
+  fi
+fi
+
+# Update bash runtime configuration
+#-----------------------------------------------------------
+if [ ! -L ${HOME}/.bash.bashrc -a -f ${HOME}/.bashrc -a -f ${ROOTDIR}/bash.bashrc ]; then
+  msg="Update bash runtime configuration"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/bash.bashrc ${HOME}/.bash.bashrc >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  [ `grep -c ". ~/.bash.bashrc" ${HOME}/.bashrc 2>>${ROOTDIR}/log/${TRFN}` -eq 0 ] && {
+    echo "\n# User-defined bashrc\nif [ -f ~/.bash.bashrc ]; then\n  . ~/.bash.bashrc\nfi" >>${HOME}/.bashrc
+  }
+fi
+
+# Update user-defined function
+#-----------------------------------------------------------
+if [ ! -L ${HOME}/.bash_func -a -f ${HOME}/.bashrc -a -f ${ROOTDIR}/bash_func ]; then
+  msg="Update user-defined function"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/bash_func ${HOME}/.bash_func >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  [ `grep -c ". ~/.bash_func" ${HOME}/.bashrc 2>>${ROOTDIR}/log/${TRFN}` -eq 0 ] && {
+    echo "\n# User-defined function\nif [ -f ~/.bash_func ]; then\n  . ~/.bash_func\nfi" >>${HOME}/.bashrc
+  }
+fi
+
+# Add bash alias
+#-----------------------------------------------------------
+if [ ! -L ${HOME}/.bash_aliases -a -f ${ROOTDIR}/bash_aliases ]; then
+  msg="Add bash alias"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/bash_aliases ${HOME}/.bash_aliases >>${ROOTDIR}/log/${TRFN} 2>&1
+fi
+
+# Change runlevel to text mode and console resolution
+#-----------------------------------------------------------
+if [ -f /etc/default/grub ]; then
+  [ `grep -c ^GRUB_CMDLINE_LINUX_DEFAULT=\"text\"$ /etc/default/grub 2>> ${ROOTDIR}/log/${TRFN}` -eq 0 ] && {
+    msg="Change runlevel to text mode"
+    timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+    echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+    sudo sed -in 's/^GRUB_CMDLINE_LINUX_DEFAULT="[^t][^e][^x][^t]/# &/' /etc/default/grub && sudo sed -in '/^# GRUB_CMDLINE_LINUX_DEFAULT="[^t][^e][^x][^t]/a\GRUB_CMDLINE_LINUX_DEFAULT="text"' /etc/default/grub && sudo update-grub >>${ROOTDIR}/log/${TRFN} 2>&1
+    sudo sed -in 's/^GRUB_GFXMODE=[^1][^0][^2][^4][^x][^7][^6][^8]/# &/' /etc/default/grub && sudo sed -in '/^# GRUB_GFXMODE=[^1][^0][^2][^4][^x][^7][^6][^8]/a\GRUB_GFXMODE=1024x768' /etc/default/grub && sudo update-grub >>${ROOTDIR}/log/${TRFN} 2>&1
+    sudo sed -in 's/^set gfxpayload=[^k][^e][^e][^p]/# &/' /etc/grub.d/00_header && sudo sed -in '/^# set gfxpayload=[^k][^e][^e][^p]/a\set gfxpayload=keep' /etc/grub.d/00_header && sudo update-grub >>${ROOTDIR}/log/${TRFN} 2>&1
+  } 
+fi
+
+# Configure dhcp in eth0
+#-----------------------------------------------------------
+if [ `grep -c eth0 /etc/network/interfaces 2>> ${ROOTDIR}/log/${TRFN}` -eq 0 ]; then
+  sudo echo -e "\nauto eth0\niface eth0 inet dhcp" >> /etc/network/interfaces 2>> ${ROOTDIR}/log/${TRFN}
+fi
+
+# Update apt source list
+#-----------------------------------------------------------
+if [ ! -L /etc/apt/sources.list -a -f ${ROOTDIR}/sources.list ]; then
+  msg="Build and update sources.list file"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  sudo ln -sf ${ROOTDIR}/sources.list /etc/apt/sources.list >>${ROOTDIR}/log/${TRFN} 2>&1
+  sudo apt-get update >>${ROOTDIR}/log/${TRFN} 2>&1
+fi
+
+# Install some useful software
+#-----------------------------------------------------------
+appInfLst="vim:vim ctags:exuberant-ctags cscope:cscope expect:expect ssh:openssh-client sshfs:sshfs tmux:tmux growisofs:dvd+rw-tools rsync:rsync awesome:awesome awesome:awesome-extra dmenu:dwm-tools"
+
+for appInf in ${appInfLst}; do
+  binName=$(echo ${appInf} | awk -F ":" '{print $1}')
+  [ -z `which ${binName}` ] && {
+    appName=$(echo ${appInf} | awk -F ":" '{print $2}')
+
+    msg="Installing ${appName} ..."
+    timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+    echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+    sudo apt-get install -y ${appName} >>${ROOTDIR}/log/${TRFN} 2>&1
+  } 
+done
+
+# Configure vi
+#-----------------------------------------------------------
+if [ ! -L ${HOME}/.vim -a -d ${ROOTDIR}/vim -o ! -L ${HOME}/.vimrc -a -f ${ROOTDIR}/vimrc ]; then
+  msg="Configure vi"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/vim ${HOME}/.vim >>${ROOTDIR}/log/${TRFN} 2>&1
+  ln -s ${ROOTDIR}/vimrc ${HOME}/.vimrc >>${ROOTDIR}/log/${TRFN} 2>&1
+fi
+
+# Configure tmux
+#-----------------------------------------------------------
+if [ ! -L ${HOME}/.tmux.conf -a -f ${ROOTDIR}/tmux.conf ]; then
+  msg="Configure tmux"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/tmux.conf ${HOME}/.tmux.conf >>${ROOTDIR}/log/${TRFN} 2>&1
+fi
+
+# Configure rsync
+#-----------------------------------------------------------
+if [ ! -L /etc/rsyncd.conf -a -f ${ROOTDIR}/rsyncd.conf ]; then
+  msg="Configure rsync"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  sudo sed -in 's/^\(RSYNC_ENABLE=\)false/\1true/' /etc/default/rsync >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  sudo ln -s ${ROOTDIR}/rsyncd.conf /etc/rsyncd.conf >>${ROOTDIR}/log/${TRFN} 2>&1
+  sudo ln -s ${ROOTDIR}/rsyncd.secrets /etc/rsyncd.secrets >>${ROOTDIR}/log/${TRFN} 2>&1
+fi
+
+# Configure ssh client
+#-----------------------------------------------------------
+if [ ! -L ${HOME}/.ssh -a -d ${ROOTDIR}/ssh ]; then
+  msg="Configure ssh client"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/ssh/ ${HOME}/.ssh >>${ROOTDIR}/log/${TRFN} 2>&1
+fi
+
+# Configure qc client
+#-----------------------------------------------------------
+if [ ! -L ${HOME}/.qc.conf -a -f ${ROOTDIR}/qc.conf ]; then
+  msg="Configure qc client"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/qc.conf ${HOME}/.qc.conf >>${ROOTDIR}/log/${TRFN} 2>&1
+fi
+
+# Install apple lihei font
+#-----------------------------------------------------------
+if [ ! -L ${HOME}/.fonts -a -d ${ROOTDIR}/fonts ]; then
+  msg="Install apple lihei font"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/fonts/ ${HOME}/.fonts >>${ROOTDIR}/log/${TRFN} 2>&1
+  cd ${HOME}/.fonts/apple && mkfontscale && mkfontdir && fc-cache && cd - >>${ROOTDIR}/log/${TRFN} 2>&1
+fi
+
+# Install todo
+#-----------------------------------------------------------
+if [ ! -L ${HOME}/.todo -a -d ${ROOTDIR}/todo ]; then
+  msg="Install ToDo configuration"
+  timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+  echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  ln -s ${ROOTDIR}/todo/ ${HOME}/.todo >>${ROOTDIR}/log/${TRFN} 2>&1
+
+  if [ ! -L /etc/bash_completion.d/todo -a -f ${ROOTDIR}/todo/todo ]; then
+    msg="Install ToDo bash completion"
+    timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+    echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+    sudo ln -s ${ROOTDIR}/todo/todo /etc/bash_completion.d/todo >>${ROOTDIR}/log/${TRFN} 2>&1
+  fi
+fi
+
+# Disable framebuffer in VirtualBox
+#-----------------------------------------------------------
+if [ -f /etc/modprobe.d/blacklist-framebuffer.conf ]; then
+  [ `grep -c "^blacklist vga16fb$" /etc/modprobe.d/blacklist-framebuffer.conf 2>>${ROOTDIR}/log/${TRFN}` -eq 0 ] && {
+    msg="Disable framebuffer in VirtualBox"
+    timeStamp=$(date +%Y/%m/%d-%H:%M:%S)
+    echo "${timeStamp} ${LINENO} ${msg}" >>${ROOTDIR}/log/${TRFN} 2>&1
+
+    sudo chmod o+w /etc/modprobe.d/blacklist-framebuffer.conf &&
+ echo "# disable framebuffer in VirtualBox\nblacklist vga16fb" >>/etc/modprobe.d/blacklist-framebuffer.conf && sudo chmod o-w /etc/modprobe.d/blacklist-framebuffer.conf >>${ROOTDIR}/log/${TRFN} 2>&1
+  } 
+fi
+
+# ##########################################################
+# Main ends here.
+# ##########################################################
+
+echo "\n ================ End: build work environment $(date) ============== " >>${ROOTDIR}/log/${TRFN} 2>&1

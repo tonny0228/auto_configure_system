@@ -1,0 +1,143 @@
+#!/bin/sh
+
+ignore="( -name SCCS -o -name BitKeeper -o -name .svn -o \
+          -name CVS  -o -name .pc       -o -name .hg  -o \
+          -name .git )                                   \
+          -prune -o"
+
+gen_lang_regex()
+{
+  ctags --list-maps | grep -iE "^$1 " | awk '{ idx=2; while (idx <= NF) { if (idx == 2) { printf("-name %s ", $idx) } else { printf("-o -name %s ", $idx) }; idx++ } }'
+}
+
+find_lang_sources()
+{
+  find -size +0 $ignore \( $(gen_lang_regex "$1") \) -print;
+}
+
+find_lang_sources_by_magic()
+{
+    find -size +0 $ignore -type f -exec file $(readlink -f {}) \; | grep "$1" | awk -F: '{print $1}' | sed 's/.*\(\.\/.*\)/\1/g'
+}
+
+all_c_sources()
+{
+  find -size +0 $ignore -name '*.[chS]' -print;
+}
+
+all_cpp_sources()
+{
+  find_lang_sources "c\+\+"
+}
+
+all_java_sources()
+{
+  find_lang_sources "java"
+}
+
+all_sh_sources()
+{
+#  find_lang_sources "sh"
+  find_lang_sources_by_magic "shell script"
+}
+
+all_vim_sources()
+{
+  find_lang_sources "vim"
+}
+
+all_sources()
+{
+  all_c_sources
+  all_cpp_sources
+  all_java_sources
+  all_sh_sources
+  all_vim_sources
+}
+
+gen_c_tags()
+{
+  all_c_sources | xargs ctags -a -f c.tags                              \
+  -I __initdata,__exitdata,__acquires,__releases                        \
+  -I __read_mostly,____cacheline_aligned                                \
+  -I ____cacheline_aligned_in_smp                                       \
+  -I ____cacheline_internodealigned_in_smp                              \
+  -I EXPORT_SYMBOL,EXPORT_SYMBOL_GPL                                    \
+  -I DEFINE_TRACE,EXPORT_TRACEPOINT_SYMBOL,EXPORT_TRACEPOINT_SYMBOL_GPL \
+  --sort=yes --extra=+f --c-kinds=+px                                   \
+  --regex-asm='/^(ENTRY|_GLOBAL)\(([^)]*)\).*/\2/'                      \
+  --regex-c='/^SYSCALL_DEFINE[[:digit:]]?\(([^,)]*).*/sys_\1/'
+}
+
+gen_cpp_tags()
+{
+  all_cpp_sources | xargs ctags -a -f cpp.tags                          \
+  -I __initdata,__exitdata,__acquires,__releases                        \
+  -I __read_mostly,____cacheline_aligned                                \
+  -I ____cacheline_aligned_in_smp                                       \
+  -I ____cacheline_internodealigned_in_smp                              \
+  -I EXPORT_SYMBOL,EXPORT_SYMBOL_GPL                                    \
+  -I DEFINE_TRACE,EXPORT_TRACEPOINT_SYMBOL,EXPORT_TRACEPOINT_SYMBOL_GPL \
+  --sort=yes --extra=+q --c++-kinds=+px --fields=+iaS                   \
+  --regex-c++='/^TRACE_EVENT\(([^,)]*).*/trace_\1/'                     \
+  --regex-c++='/^DEFINE_EVENT\([^,)]*, *([^,)]*).*/trace_\1/'
+}
+
+gen_java_tags()
+{
+  all_java_sources | xargs ctags -a -f java.tags                          \
+  --sort=yes --extra=+q --fields=+iaS
+}
+
+gen_sh_tags()
+{
+  all_sh_sources | xargs ctags -a -f sh.tags                          \
+  --sort=yes --extra=+f --fields=+S
+}
+
+gen_vim_tags()
+{
+  all_vim_sources | xargs ctags -a -f vim.tags                          \
+  --sort=yes --extra=+f --fields=+S
+}
+
+docscope()
+{
+  (echo \-k; echo \-q; all_sources) > cscope.files
+  cscope -b -f cscope.out
+}
+
+case "$1" in
+  "cscope")
+    docscope
+    ;;
+
+  "c")
+    rm -f c.tags
+    gen_c_tags
+    ;;
+
+  "cpp")
+    rm -f cpp.tags
+    gen_cpp_tags
+    ;;
+
+  "java")
+    rm -f java.tags
+    gen_java_tags
+    ;;
+
+  "sh")
+    rm -f sh.tags
+    gen_sh_tags
+    ;;
+
+  "vim")
+    rm -f vim.tags
+    gen_vim_tags
+    ;;
+
+  "fun")
+    all_sh_sources
+    ;;
+esac

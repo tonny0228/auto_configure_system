@@ -1,0 +1,253 @@
+#!/bin/sh
+
+# NOTE:  qc requires the .qc.conf configuration file to run.
+
+# Place the .qc.conf file in your home directory or use the -d option for a custom location.
+[ -f VERSION-FILE ] && . VERSION-FILE || VERSION="1.0"
+
+version() {
+  cat <<-EndVersion
+	QC Command Line Interface v$VERSION
+
+	First release: 8/10/2011
+	Original conception by: tonny (tonny0228@gmail.com)
+	License: GPL, http://www.gnu.org/copyleft/gpl.html
+	EndVersion
+
+  exit 1
+}
+
+# Set script name and full path early.
+QC_SH=$(basename "$0")
+QC_FULL_SH="$0"
+
+oneline_usage="$QC_SH [-hv] [-d qssh_config] action serveralias"
+
+usage()
+{
+  cat <<-EndUsage
+	Usage: $oneline_usage
+	EndUsage
+
+  exit 1
+}
+
+die()
+{
+    echo "$*"
+
+    exit 1
+}
+
+# == PROCESS OPTIONS ==
+while getopts ":hvd:" Option
+do
+  case $Option in
+    d )
+        QC_CFG_FILE=$OPTARG
+        ;;
+    h )
+        usage
+        ;;
+    v )
+        version
+        ;;
+  esac
+done
+shift $(($OPTIND - 1))
+
+# defaults if not yet defined
+QC_CFG_FILE=${QC_CFG_FILE:-$HOME/.qc.conf}
+
+# === SANITY CHECKS ===
+[ -r "$QC_CFG_FILE" ] || die "Fatal Error: Cannot read configuration file $QC_CFG_FILE"
+
+[ -z "$1" -o -z "$2" ] && usage
+
+# == HANDLE ACTION ==
+action=$( printf "%s" "$1" | tr 'A-Z' 'a-z' )
+srvali=$( printf "%s" "$2" | tr 'A-Z' 'a-z' )
+
+case $action in
+"ssh")
+  [ `grep -c ^$srvali $QC_CFG_FILE ` -eq 0 ] && die "Fatal Error: Cannot find server alias $srvali in $QC_CFG_FILE"
+  [ `grep -c ^$srvali $QC_CFG_FILE ` -gt 1 ] && die "Fatal Error: More than one server alias $srvali in $QC_CFG_FILE"
+
+  uname=$( grep ^$srvali $QC_CFG_FILE | awk '{print $2}' )
+  pwd=$( grep ^$srvali $QC_CFG_FILE | awk '{print $3}' )
+  ip=$( grep ^$srvali $QC_CFG_FILE | awk '{print $4}' )
+  port=$( grep $srvali $QC_CFG_FILE | awk '{print $5}' )
+  port=${port:-22}
+
+  cmd="spawn -noecho ssh -o StrictHostKeyChecking=no $uname@$ip -p$port"
+  cmd="set timeout 30;
+       $cmd;
+       expect {
+         *?assword:*
+         {
+           send $pwd\r;
+         }
+         eof
+         {
+           exit 1;
+         }
+         timeout
+         {
+           exit 2;
+         }
+       }
+       interact;"
+
+  expect -c "$cmd"
+  ;;
+"telnet")
+  [ `printf %s $srvali | grep -c l[a-b]$` -eq 0 ] && die "Fatal Error: Cannot resolve port number in server alias $srvali"
+
+  [ `printf %s $srvali | grep -c la$` -ne 0 ] && export port=12301
+  [ `printf %s $srvali | grep -c lb$` -ne 0 ] && port=12302
+
+  srvali=$( printf "%s" "$srvali" | sed 's/\(.*\)l\([a-b]\)/\1ha/' )
+
+  [ `grep ^$srvali $QC_CFG_FILE | wc -l` -eq 0 ] && die "Fatal Error: Cannot find server alias $srvali in $QC_CFG_FILE"
+  [ `grep ^$srvali $QC_CFG_FILE | wc -l` -gt 1 ] && die "Fatal Error: More than one server alias $srvali in $QC_CFG_FILE"
+
+  uname=root
+  pwd=r00t
+  ip=$( grep ^$srvali $QC_CFG_FILE | awk '{print $4}' )
+
+  cmd="spawn -noecho telnet $ip $port"
+  cmd="set timeout 30;
+       $cmd;
+       expect {
+         *?ogin:*
+         {
+           send $uname\r;
+         }
+         eof
+         {
+           exit 1;
+         }
+         timeout
+         {
+           exit 2;
+         }
+       }
+       expect {
+         *?assword:*
+         {
+           send $pwd\r;
+         }
+         eof
+         {
+           exit 3;
+         }
+         timeout
+         {
+           exit 4;
+         }
+       }
+       interact;"
+
+  expect -c "$cmd"
+  ;;
+"mount")
+  if [ $srvali = "all" ]; then
+    cat $QC_CFG_FILE | while read line; do
+      srvali=$(echo $line | awk '{print $1}')
+
+      qc mount $srvali
+    done
+  else
+    [ `grep -c ^$srvali $QC_CFG_FILE ` -eq 0 ] && die "Fatal Error: Cannot find server alias $srvali in $QC_CFG_FILE"
+    [ `grep -c ^$srvali $QC_CFG_FILE ` -gt 1 ] && die "Fatal Error: More than one server alias $srvali in $QC_CFG_FILE"
+
+    uname=$( grep ^$srvali $QC_CFG_FILE | awk '{print $2}' )
+    pwd=$( grep ^$srvali $QC_CFG_FILE | awk '{print $3}' )
+    ip=$( grep ^$srvali $QC_CFG_FILE | awk '{print $4}' )
+    port=$( grep $srvali $QC_CFG_FILE | awk '{print $4}' )
+    port={port:-22}
+
+    [ ! -d $HOME/$srvali ] && mkdir -p $HOME/$srvali
+
+    cmd="spawn -noecho -ignore HUP sshfs $uname@$ip: $HOME/$srvali"
+    cmd="set timeout 30;
+       $cmd;
+       expect {
+         *?assword:*
+         {
+           send $pwd\r;
+         }
+         eof
+         {
+           exit 1;
+         }
+         timeout
+         {
+           exit 2;
+         }
+       }
+       interact;"
+
+    expect -c "$cmd"
+  fi
+  ;;
+"umount")
+  if [ $srvali = "all" ]; then
+    cat $QC_CFG_FILE | while read line; do
+      srvali=$(echo $line | awk '{print $1}')
+
+      qc umount $srvali
+    done
+  else
+    [ `grep -c ^$srvali $QC_CFG_FILE ` -eq 0 ] && die "Fatal Error: Cannot find server alias $srvali in $QC_CFG_FILE"
+
+    [ `grep -c ^$srvali $QC_CFG_FILE ` -gt 1 ] && die "Fatal Error: More than one server alias $srvali in $QC_CFG_FILE"
+
+    if [ -d $HOME/$srvali ]; then
+      if [ `ls -la $HOME/$srvali | wc -l` -gt 3 ]; then
+        fusermount -u $HOME/$srvali || die "Fatal Error: Cannot umount dir $HOME/$srvali"
+      fi
+
+      rmdir $HOME/$srvali
+    fi
+  fi
+  ;;
+"run")
+  shift 2 && [ -z "$*" ] && usage
+
+  prog="$*"
+
+  [ `grep -c ^$srvali $QC_CFG_FILE ` -eq 0 ] && die "Fatal Error: Cannot find server alias $srvali in $QC_CFG_FILE"
+  [ `grep -c ^$srvali $QC_CFG_FILE ` -gt 1 ] && die "Fatal Error: More than one server alias $srvali in $QC_CFG_FILE"
+
+  uname=$( grep ^$srvali $QC_CFG_FILE | awk '{print $2}' )
+  pwd=$( grep ^$srvali $QC_CFG_FILE | awk '{print $3}' )
+  ip=$( grep ^$srvali $QC_CFG_FILE | awk '{print $4}' )
+  port=$( grep $srvali $QC_CFG_FILE | awk '{print $5}' )
+  port=${port:-22}
+
+  cmd="spawn -noecho ssh -o StrictHostKeyChecking=no $uname@$ip -p$port \"$prog\""
+  cmd="set timeout 30;
+       $cmd;
+       expect {
+         *?assword:*
+         {
+           send $pwd\r;
+         }
+         eof
+         {
+           exit 1;
+         }
+         timeout
+         {
+           exit 2;
+         }
+       }
+       interact;"
+
+  expect -c "$cmd"
+  ;;
+* )
+  usage
+  ;;
+esac

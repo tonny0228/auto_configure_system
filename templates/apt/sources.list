@@ -1,0 +1,71 @@
+<settings>
+  <countrylist>
+    ##############################################################
+    ################## THE FASTEST UBUNTU REPOS ##################
+    ##############################################################
+    <japan>
+      jp
+    </japan>
+    <korea>
+      kr
+    </korea>
+    <china>
+      cn 
+    </china>
+  <default>
+    deb http://cn.archive.ubuntu.com/ubuntu/ #RELEASE# main restricted universe multiverse 
+    deb http://cn.archive.ubuntu.com/ubuntu/ #RELEASE#-security main restricted universe multiverse 
+    deb http://cn.archive.ubuntu.com/ubuntu/ #RELEASE#-updates main restricted universe multiverse 
+    deb http://cn.archive.ubuntu.com/ubuntu/ #RELEASE#-proposed main restricted universe multiverse 
+    deb http://cn.archive.ubuntu.com/ubuntu/ #RELEASE#-backports main restricted universe multiverse 
+    deb-src http://cn.archive.ubuntu.com/ubuntu/ #RELEASE# main restricted universe multiverse 
+    deb-src http://cn.archive.ubuntu.com/ubuntu/ #RELEASE#-security main restricted universe multiverse 
+    deb-src http://cn.archive.ubuntu.com/ubuntu/ #RELEASE#-updates main restricted universe multiverse 
+    deb-src http://cn.archive.ubuntu.com/ubuntu/ #RELEASE#-proposed main restricted universe multiverse 
+    deb-src http://cn.archive.ubuntu.com/ubuntu/ #RELEASE#-backports main restricted universe multiverse 
+  </default>
+  <template>
+    #############################################################
+    ################### OFFICIAL UBUNTU REPOS ###################
+    #############################################################
+
+    ###### Ubuntu Main Repos
+    deb http://#HOST#/ubuntu/ #RELEASE# main restricted universe multiverse
+    deb-src http://#HOST#/ubuntu/ #RELEASE# main restricted universe multiverse
+    
+    ###### Ubuntu Update Repos
+    deb http://#HOST#/ubuntu/ #RELEASE#-security main restricted universe multiverse
+    deb http://#HOST#/ubuntu/ #RELEASE#-updates main restricted universe multiverse
+    deb http://#HOST#/ubuntu/ #RELEASE#-proposed main restricted universe multiverse
+    deb http://#HOST#/ubuntu/ #RELEASE#-backports main restricted universe multiverse
+    deb-src http://#HOST#/ubuntu/ #RELEASE#-security main restricted universe multiverse
+    deb-src http://#HOST#/ubuntu/ #RELEASE#-updates main restricted universe multiverse
+    deb-src http://#HOST#/ubuntu/ #RELEASE#-proposed main restricted universe multiverse
+    deb-src http://#HOST#/ubuntu/ #RELEASE#-backports main restricted universe multiverse
+    
+    ###### Ubuntu Partner Repo
+    deb http://archive.canonical.com/ubuntu #RELEASE# partner
+    deb-src http://archive.canonical.com/ubuntu #RELEASE# partner
+    
+    ###### Ubuntu Extras Repo
+    ## Run this command: sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 16126D3A3E5C1192
+    deb http://extras.ubuntu.com/ubuntu #RELEASE# main
+    deb-src http://extras.ubuntu.com/ubuntu #RELEASE# main
+    
+    ##############################################################
+    ##################### UNOFFICIAL  REPOS ######################
+    ##############################################################
+    
+    ###### 3rd Party Binary Repos
+    
+    
+    ####### 3rd Party Source Repos
+
+    
+    ###### PPA Repos
+    
+    #### rime - https://code.google.com/p/rimeime
+    ## Run this command: sudo add-apt-repository --yes ppa:fcitx-team/nightly
+    ## Run this command: sudo add-apt-repository --yes ppa:lotem/rime
+  </template>
+</settings>

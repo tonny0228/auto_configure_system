@@ -1,0 +1,145 @@
+#!/bin/sh
+
+choicefile=$(mktemp /tmp/choicefile.XXXXXX)
+
+update_apt_source()
+{
+  zenity --question --text="This process will overwrite apt source file. \nDo you want to continue [Y/n]?" || exit 1
+
+  #BUILDDIR#/settings/apt/build.sh
+}
+
+list_upgrade()
+{
+    apt-get -s upgrade | awk '/Inst.+/ {print $2}'
+}
+
+clear_kernel()
+{
+    curlv=$(uname -r)
+    for pkg in $(dpkg --list | grep linux-image | grep -v linux-image-generic | awk '{ print $2 }'); do
+      [ $pkg != "linux-image-$curlv" ] && sudo apt-get --force-yes --yes purge $pkg
+    done
+}
+
+install_xbmc()
+{
+  sudo apt-get install --force-yes --yes xbmc
+
+  xbmc &
+  sleep 5 && killall xbmc.bin
+
+  sudo cp #BUILDDIR#/resources/font/msyh.ttc /usr/share/xbmc/media/Fonts/arial.ttf
+
+  addonlist="repository.googlecode.xbmc-addons-chinese"
+  for addon in $addonlist; do
+    [ -d $HOME/.xbmc/addons/$addon ] || wget -r -c -nH -np --cut-dirs=2 --directory-prefix=$HOME/.xbmc/addons http://xbmc-addons-chinese.googlecode.com/svn/addons/$addonlist/
+  done
+
+  addonlist="weather.weatherchina plugin.video.youku plugin.video.yinyuetai"
+  for addon in $addonlist; do
+    [ -d $HOME/.xbmc/addons/$addon ] || wget -r -c -nH -np --cut-dirs=3 --directory-prefix=$HOME/.xbmc/addons http://xbmc-addons-chinese.googlecode.com/svn/addons/eden_src/$addon/
+  done
+
+  addonlist="script.rss.editor"
+  for addon in $addonlist; do
+    [ -d $HOME/.xbmc/addons/$addon ] || wget -r -c -nH -np --cut-dirs=4 --directory-prefix=$HOME/.xbmc/addons http://ftp3.ie.freebsd.org/pub/xbmc/addons/eden/$addon/
+  done
+
+  if [ ! -d $HOME/.xbmc/userdata/addon_data/weather.weatherchina ]; then
+    mkdir -p $HOME/.xbmc/userdata/addon_data/weather.weatherchina && cp #BUILDDIR#/templates/xbmc/settings.xml $HOME/.xbmc/userdata/addon_data/weather.weatherchina/ 
+
+    loclist="南京:101190101 浦东:101021300"
+    idx=1
+    for loc in $loclist; do
+      city=$(echo $loc | awk -F: '{ print $1 }')
+      id=$(echo $loc | awk -F: '{ print $2 }')
+
+      sed -i "s/\(.*id=\"Location$idx\" value=\"\).*\(\"\)/\1$city\2/" $HOME/.xbmc/userdata/addon_data/weather.weatherchina/settings.xml && sed -i "s/\(.*id=\"Location${idx}id\" value=\"\).*\(\"\)/\1$id\2/" $HOME/.xbmc/userdata/addon_data/weather.weatherchina/settings.xml
+  
+      idx=$((idx + 1))
+    done
+  fi
+
+  sed -i "/<locale>/,/<\/locale>/s/\(.*<language>\).*\(<\/language>.*\)/\1Chinese (Simple)\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<lookandfeel>/,/<\/lookandfeel>/s/\(.*<startupwindow>\).*\(<\/startupwindow>.*\)/\110006\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<lookandfeel>/,/<\/lookandfeel>/s/\(.*<font>\).*\(<\/font>.*\)/\1Arial\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<lookandfeel>/,/<\/lookandfeel>/s/\(.*<enablerssfeeds>\).*\(<\/enablerssfeeds>.*\)/\1true\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<screensaver>/,/<\/screensaver>/s/\(.*<mode>\).*\(<\/mode>.*\)/\1screensaver.rsxs.euphoria\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<smb>/,/<\/smb>/s/\(.*<workgroup>\).*\(<\/workgroup>.*\)/\1XBMC\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<network>/,/<\/network>/s/\(.*<httpproxyserver>\).*\(<\/httpproxyserver>.*\)/\1127.0.0.1\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<network>/,/<\/network>/s/\(.*<httpproxyport>\).*\(<\/httpproxyport>.*\)/\18087\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<network>/,/<\/network>/s/\(.*<usehttpproxy>\).*\(<\/usehttpproxy>.*\)/\1true\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<services>/,/<\/services>/s/\(.*<esallinterfaces>\).*\(<\/esallinterfaces>.*\)/\1true\2/" $HOME/.xbmc/userdata/guisettings.xml
+  sed -i "/<weather>/,/<\/weather>/s/\(.*<addon>\).*\(<\/addon>.*\)/\1weather.weatherchina\2/" $HOME/.xbmc/userdata/guisettings.xml
+
+  sed -i "/<set id=\"1\">/,/<\/set>/s/\(.*<feed updateinterval=\"30\">\).*\(<\/feed>.*\)/\1http:\/\/news.163.com\/special\/00011K6L\/rss_newstop.xml\2/" $HOME/.xbmc/userdata/RssFeeds.xml
+}
+
+install_bumblebee()
+{
+  brightness=$(($(cat /sys/class/backlight/intel_backlight/max_brightness) * 7 / 10))
+
+  sudo add-apt-repository --yes ppa:bumblebee/stable && sudo add-apt-repository --yes ppa:ubuntu-x-swat/x-updates && sudo apt-get update
+  sudo apt-get install --force-yes --yes bumblebee bumblebee-nvidia linux-headers-generic
+
+  sudo sed -i "/^exit 0$/i\echo $brightness > /sys/class/backlight/intel_backlight/brightness" /etc/rc.local
+
+  zenity --info --text="Bumblebee will work after reboot."
+}
+
+configure_proxy_server()
+{
+  zenity --question --text="This process will configure this box as proxy server automatically. \nDo you want to continue [Y/n]?" || exit 1
+
+  curdir=$(dirname $(readlink -f $0))
+
+  export BUILDDIR=$HOME && $curdir/../../settings/sudoers/build.sh
+  export BUILDDIR=$HOME && $curdir/../../settings/autoremove/build.sh
+  export BUILDDIR=$HOME && $curdir/../../apps/awesome/build.sh
+  export BUILDDIR=$HOME && $curdir/../../apps/goagent/build.sh
+  export BUILDDIR=$curdir/../.. && $curdir/../../apps/goagent/build.sh
+  export BUILDDIR=$HOME && $curdir/../../apps/privoxy/build.sh
+  export BUILDDIR=$HOME && $curdir/../../settings/sudoers/build.sh
+}
+
+main()
+{
+  zenity --list --title="Tonny's Treasure Box" --text="Choose the Applications You Wish to Run/Install/Update" --hide-header --hide-column=1 --column "Index" --column "Description" --height 390 --width 320 \
+  "0" "Update APT source" \
+  "1" "List Upgrade" \
+  "2" "Clear Old Kernel" \
+  "3" "Install XBMC" \
+  "4" "Install Bumblebee" \
+  "5" "configure Proxy Server" > $choicefile || exit 1
+
+
+  case "$(cat $choicefile)" in
+    0)
+      update_apt_source
+      ;;
+    1)
+      list_upgrade
+      ;;
+    2)
+      clear_kernel
+      ;;
+    3)
+      install_xbmc
+      ;;
+    4)
+      install_bumblebee
+      ;;
+    5)
+      configure_proxy_server
+      ;;
+    *)
+      exit 2
+      ;;
+  esac
+}
+
+while true;
+do
+  main
+done

@@ -1,0 +1,72 @@
+#!/bin/sh
+
+die()
+{
+    echo "ERROR: $*"
+
+    exit 1
+}
+
+warn()
+{
+  echo "WARN: $*"
+}
+
+#HOME=/home/hscroot/tonny/
+HOME=/home/tonny/test/
+
+REBOOT="hmcshutdown -r -t now"
+
+JARDIR=${HOME}jar/
+EXEDIR=${HOME}exe/
+BAKDIR=${HOME}bak/
+BAKJARDIR=${BAKDIR}jar/
+BAKEXEDIR=${BAKDIR}exe/
+
+JARPATCHDIR=/opt/ccfw/debugjars/
+EXEPATCHDIR=/opt/esshmc/bin/
+
+[ ! -d $HOME ] &&  mkdir $HOME
+[ ! -d $HOME ] && die "Can't create $HOME directory !"
+[ ! -d $JARDIR ] &&  mkdir $JARDIR
+[ ! -d $JARDIR ] && die "Can't create jar directory in $HOME !"
+[ ! -d $EXEDIR ] &&  mkdir $EXEDIR
+[ ! -d $EXEDIR ] && die "Can't create exe directory in $HOME !"
+[ ! -d $BAKDIR ] &&  mkdir $BAKDIR
+[ ! -d $BAKDIR ] && die "Can't create exe directory in $HOME !"
+[ ! -d $BAKJARDIR ] &&  mkdir $BAKJARDIR
+[ ! -d $BAKJARDIR ] && die "Can't create jar directory in $BAKDIR !"
+[ ! -d $BAKEXEDIR ] &&  mkdir $BAKEXEDIR
+[ ! -d $BAKEXEDIR ] && die "Can't create jar directory in $BAKDIR !"
+
+rm -f ${BAKJARDIR}* || die "Can't clear jar directory $BAKJARDIR !"
+rm -f ${BAKEXEDIR}* || die "Can't clear exe directory $BAKEXEDIR !"
+
+JARLIST=$(find $JARDIR -name "*.jar" | sed "s%$JARDIR%%g")
+EXELIST=$(find $EXEDIR -name "*.exe" | sed "s%$EXEDIR%%g" | sed "s%\..*%%g")
+
+for jar in $JARLIST
+do
+  [ -f $JARPATCHDIR$jar ] && cp $JARPATCHDIR$jar $BAKJARDIR
+  [ ! -f $BAKJARDIR$jar ] && die "Error found when run cp $JARPATCHDIR$jar $BAKJARDIR$jar !"
+
+  cp $JARDIR$jar $JARPATCHDIR || die "Error found when run cp $JARDIR$jar $JARPATCHDIR !"
+done
+
+for exe in $EXELIST
+do
+  [ -f $EXEPATCHDIR$exe ] && cp $EXEPATCHDIR$exe $BAKEXEDIR
+  [ ! -f $BAKEXEDIR$exe ] && die "Error found when run cp $EXEPATCHDIR$exe $BAKEXEDIR$exe !"
+
+  cp $EXEDIR$exe $EXEPATCHDIR || die "Error found when run cp $EXEDIR$exe $EXEPATCHDIR !"
+done
+
+echo -en "\nReboot now [y/N] ?" 
+read choice
+
+if [ $choice == "y" -o $choice == "Y" ]
+do
+  $REBOOT
+done
+
+rm $0 && exit 0 || exit 1

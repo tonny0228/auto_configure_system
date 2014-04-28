@@ -1,0 +1,161 @@
+#!/bin/sh
+
+PROG=$(basename "$0")
+
+REMOTEHOST=sb
+REMOTEPROG=remotebuild
+
+REMOTEHOME=/home/tangweit/
+LOCALHOME=/home/tonny/
+
+RSYNC="rsync -AEXhlpqrtu --inplace --executability --human-readable --progress"
+DIFF="diff -qr"
+TRANSB=${LOCALHOME}.bin/transb
+
+REMOTEWORKDIR=${REMOTEHOME}workspace/
+MOUNTWORKDIR=$LOCALHOME$REMOTEHOST/
+MOUNTWORKSPACE=${MOUNTWORKDIR}workspace/
+MOUNTSRCDIR=${MOUNTWORKSPACE}src/
+MOUNTDESDIR=${MOUNTWORKSPACE}des/
+LOCALWORKDIR=${LOCALHOME}IBM/work/
+LOCALSRCDIR=${LOCALWORKDIR}src/
+LOCALDESDIR=${LOCALWORKDIR}des/
+
+LOCALSANDBOXCONF=${LOCALSRCDIR}sandbox.conf
+MOUNTSANDBOXCONF=${MOUNTSRCDIR}sandbox.conf
+
+MOUNTFLAG=NEW_DEVELOPMENT
+GREPFILTER="Invoke|tangweit"
+
+[ -f ${LOCALHOME}.bin/basefunc ] && . ${LOCALHOME}.bin/basefunc || { echo "File basefunc not found in ${LOCALHOME}.bin/ !"; exit 1; }
+
+[ ! -d $MOUNTWORKDIR ] && mkdir $MOUNTWORKDIR
+[ ! -d $MOUNTWORKDIR ] && die "Can't create mount point $REMOTEHOST in $LOCALHOME !"
+[ ! -d $MOUNTWORKDIR$MOUNTFLAG ] && sshfs ${REMOTEHOST}: $MOUNTWORKDIR
+[ ! -d $MOUNTWORKDIR$MOUNTFLAG ] && die "Can't mount remote host $REMOTEHOST in $MOUNTWORKDIR !"
+[ ! -d $MOUNTWORKSPACE ] && mkdir $MOUNTWORKSPACE
+[ ! -d $MOUNTWORKSPACE ] && die "Can't create workspace directory in $MOUNTWORKDIR !"
+[ ! -d $MOUNTSRCDIR ] && mkdir $MOUNTSRCDIR
+[ ! -d $MOUNTSRCDIR ] && die "Can't create src directory in $MOUNTWORKSPACE !"
+[ ! -d $MOUNTDESDIR ] && mkdir $MOUNTDESDIR
+[ ! -d $MOUNTDESDIR ] && die "Can't create des directory in $MOUNTWORKSPACE !"
+[ ! -d $LOCALWORKDIR ] && mkdir $LOCALWORKDIR
+[ ! -d $LOCALWORKDIR ] && die "Can't create local work directory in ${LOCALHOME}/IBM/ !"
+[ ! -d $LOCALSRCDIR ] && mkdir $LOCALSRCDIR
+[ ! -d $LOCALSRCDIR ] && die "Can't create local src directory in $LOCALWORKDIR !"
+[ ! -d $LOCALDESDIR ] && mkdir $LOCALDESDIR
+[ ! -d $LOCALDESDIR ] && die "Can't create local des directory in $LOCALWORKDIR !"
+
+[ ! -f $LOCALSANDBOXCONF ] && die "File $LOCALSANDBOXCONF not found !" 
+
+NUMLIST=$(awk '{print $1}' $LOCALSANDBOXCONF)
+VERLIST=$(awk '{print $2}' $LOCALSANDBOXCONF)
+idx=1
+for num in $NUMLIST
+do
+  NUMARRAY[$idx]=$num
+
+  idx=$(($idx + 1))
+done
+idx=1
+for ver in $VERLIST
+do
+  VERARRAY[$idx]=$ver
+
+  idx=$(($idx + 1))
+done
+
+errnumidxlist=""
+oknumidxlist=""
+errnumlist=""
+oknumlist=""
+for ((idx=1; idx<=${#NUMARRAY[@]}; idx++))
+do
+  num=${NUMARRAY[$idx]}
+
+  echo $num | grep -E ^[1-9][0-9]\{5,5\}$ > /dev/null && { oknumidxlist="$idx $oknumidxlist"; oknumlist="$num $oknumlist"; } || { errnumidxlist="$idx $errnumidxlist"; errnumlist="$num $errnumlist"; } 
+done
+[ -z "$errnumidxlist" ] || warn "Found cmvc number format error in line ${errnumidxlist}in ${errnumlist}in $LOCALSANDBOXCONF !" 
+[ -z "$oknumidxlist" ] && die "Not found any right cmvc number format in $LOCALSANDBOXCONF !" 
+
+errveridxlist=""
+okveridxlist=""
+errnumlist=""
+oknumlist=""
+for idx in $oknumidxlist
+do
+  num=${NUMARRAY[$idx]}
+  ver=${VERARRAY[$idx]}
+
+  echo $ver | grep -E ^[Hh][Mm][Cc][6-7][a-z]$\|^[Rr][10-14][a-z]$ > /dev/null && { okveridxlist="$idx $okveridxlist"; oknumlist="$num $oknumlist"; } || { errveridxlist="$idx $errveridxlist"; errnumlist="$num $errnumlist"; } 
+done
+[ -z "$errveridxlist" ] || warn "Found cmvc version format error in line ${errveridxlist}in ${errnumlist}in $LOCALSANDBOXCONF !" 
+[ -z "$okveridxlist" ] && die "Not found any right configuration format in $LOCALSANDBOXCONF !" 
+
+errcodeidxlist=""
+okcodeidxlist=""
+errnumlist=""
+oknumlist=""
+for idx in $okveridxlist
+do
+  num=${NUMARRAY[$idx]}
+
+  [ $(find $LOCALSRCDIR$num/ -name "*.java" -o -name "*.c" -o -name "*.C" | wc -l) -ne 0 ] && { okcodeidxlist="$idx $okcodeidxlist"; oknumlist="$num $oknumlist"; } || { errcodeidxlist="$idx $errcodeidxlist"; errnumlist="$num $errnumlist"; }
+done
+[ -z "$errcodeidxlist" ] || warn "Not found any java|c|cpp source code in line ${errcodeidxlist}in ${errnumlist}in $LOCALSANDBOXCONF !" 
+[ -z "$okcodeidxlist" ] && die "No sandbox can build in $LOCALSANDBOXCONF !" 
+
+errsyncidxlist=""
+oksyncidxlist=""
+errnumlist=""
+oknumlist=""
+for idx in $okcodeidxlist
+do
+  num=${NUMARRAY[$idx]}
+
+  [ ! -d $MOUNTSRCDIR$num/ ] && mkdir $MOUNTSRCDIR$num/
+  [ ! -d $MOUNTSRCDIR$num/ ] && { errsyncidxlist="$idx $errsyncidxlist"; errnumlist="$num $errnumlist"; continue; }
+
+  $RSYNC $LOCALSRCDIR$num/* $MOUNTSRCDIR$num/ && { oksyncidxlist="$idx $oksyncidxlist"; oknumlist="$num $oknumlist"; } || { errsyncidxlist="$idx $errsyncidxlist"; errnumlist="$num $errnumlist"; }
+done
+[ -z "$errsyncidxlist" ] || warn "Rsync error when sync any java|c|cpp source code to remote host in line ${errsyncidxlist}in ${errnumlist}in $LOCALSANDBOXCONF !" 
+[ -z "$oksyncidxlist" ] && die "No java|c|cpp source code can sync to remote host in $LOCALSANDBOXCONF!" 
+
+[ -f $MOUNTSANDBOXCONF ] && rm -f $MOUNTSANDBOXCONF 
+[ -f $MOUNTSANDBOXCONF ] && warn "Can't clear $MOUNTSANDBOXCONF !"
+
+for idx in $oksyncidxlist
+do
+  num=${NUMARRAY[$idx]}
+  ver=${VERARRAY[$idx]}
+
+  mv $LOCALSANDBOXCONF $LOCALSANDBOXCONF.bak && awk '{ if ($1 == "'$num'" && $2 == "'$ver'") { print $0 } }' $LOCALSANDBOXCONF.bak > $LOCALSANDBOXCONF || die "Can't backup|generate new $LOCALSANDBOXCONF !"
+done
+
+$RSYNC $LOCALSANDBOXCONF $MOUNTSANDBOXCONF || eval die "Rsync error when run $RSYNC $LOCALSANDBOXCONF $MOUNTSANDBOXCONF !"
+
+[ ! -f $MOUNTSANDBOXCONF ] && eval die "File $MOUNTSANDBOXCONF not found after run $RSYNC $LOCALSANDBOXCONF $MOUNTSANDBOXCONF !"
+
+[ -f $MOUNTWORKDIR$REMOTEPROG ] && rm -f $MOUNTWORKDIR$REMOTEPROG
+[ -f $MOUNTWORKDIR$REMOTEPROG ] && die "Can't clear $REMOTEPROG in $MOUNTWORKDIR !"
+
+$RSYNC ${LOCALHOME}.bin/$REMOTEPROG $MOUNTWORKDIR || eval die "Rsync error when run $RSYNC ${LOCALHOME}.bin/$REMOTEPROG $MOUNTWORKDIR !"
+
+[ ! -f $MOUNTWORKDIR$REMOTEPROG ] && eval die "File $MOUNTWORKDIR$REMOTEPROG not found after run $RSYNC ${LOCALHOME}.bin/$REMOTEPROG $MOUNTWORKDIR !"
+
+echo "Begin build sandbox $oknumlist!"
+
+remotebuildinfo=$(mktemp /tmp/remotebuildinfo.XXXXXX)
+
+ssh $REMOTEHOST $REMOTEHOME$REMOTEPROG > $remotebuildinfo 2>&1 || cat $remotebuildinfo | grep -Ev $GREPFILTER
+
+rm -f $remotebuildinfo
+
+rm -rf ${LOCALDESDIR}* || warn "Can't clear file in $LOCALDESDIR !"
+
+$RSYNC ${MOUNTDESDIR}* $LOCALDESDIR || eval die "Rsync error when run $RSYNC ${MOUNTDESDIR}* $LOCALDESDIR !"
+
+jarlist=$(find $LOCALDESDIR -name "*.jar")
+exelist=$(find $LOCALDESDIR -name "*.exe")
+
+echo "Sandbox $jarlist $exelist build successfully !"

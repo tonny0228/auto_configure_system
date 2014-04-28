@@ -1,0 +1,57 @@
+#!/bin/sh
+
+TUCSON=calline.storage.tucson.ibm.com
+USCA=rassandbox1.storage.usca.ibm.com
+
+#HOSTLIST="$TUCSON $USCA"
+HOSTLIST="$TUCSON"
+UNAME=tangweit@cn.ibm.com
+PWD=ibm20140509
+
+PIDLIST=""
+for host in $HOSTLIST; do
+  cmd="spawn -noecho telnet $host"
+  cmd="set timeout 30;
+       $cmd;
+       expect {
+         *sername:*
+         {
+           send $UNAME\r;
+	   
+	   sleep 1;
+         }
+         eof
+         {
+           exit 1;
+         }
+         timeout
+         {
+           exit 2;
+         }
+       }
+       expect {
+         *
+         {
+           send $PWD\r;
+         }
+         eof
+         {
+           exit 3;
+         }
+         timeout
+         {
+           exit 4;
+         }
+       }
+       interact;"
+
+    expect -c "$cmd" > $host &
+
+    PIDLIST="$! $PIDLIST"
+  done
+
+  sleep 5
+
+  for pid in $PIDLIST; do
+      kill -9 $pid
+  done

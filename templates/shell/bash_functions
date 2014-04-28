@@ -1,0 +1,62 @@
+myip()
+{
+  curl -s ifconfig.me
+}
+
+mycountry()
+{
+  lynx -dump http://www.ip-adress.com/ip_tracer/ | grep "IP address country" | awk -F: '{ print $2 }' | awk -F, '{ print $1 }' | sed 's/ip address flag//;s/^[ \t]*//;s/[ \t]*$//' | tr 'A-Z' 'a-z'
+}
+
+myprovince()
+{
+  lynx -dump http://www.ip-adress.com/ip_tracer/ | grep "IP address state" | awk -F: '{ print $2 }' | sed 's/^[ \t]*//;s/[ \t]*$//' | tr 'A-Z' 'a-z'
+}
+
+mycity()
+{
+  lynx -dump http://www.ip-adress.com/ip_tracer/ | grep "IP address city" | awk -F: '{ print $2 }' | sed 's/^[ \t]*//;s/[ \t]*$//' | tr 'A-Z' 'a-z'
+}
+
+myisp()
+{
+  lynx -dump http://www.ip-adress.com/ip_tracer/ | grep "My ISP" | awk -F: '{
+    print $2 }' | awk '{ print $1 }' | sed 's/^[ \t]*//;s/[ \t]*$//' | tr 'A-Z' 'a-z'
+}
+
+lip()
+{
+  ifconfig -a | awk '/(cast)/ { print $2 }' | cut -d':' -f2 | head -1
+}
+
+mount()
+{
+  mount $* | column -t 
+}
+
+man()
+{
+  /usr/bin/man $@ || (help $@ > /dev/null 2>&1 && help $@ | less)
+}
+
+mkcd()
+{
+  mkdir -p "$@" && eval cd "\"\$$#\"";
+}
+
+psgrep()
+{
+  ps aux | grep "$1" | grep -v "grep"
+}
+
+psterm()
+{
+  [ ${#} -eq 0 ]  && echo "usage: $FUNCNAME STRING" && return 0
+
+  local pid
+  pid=$(ps ax | grep "$1" | grep -v grep | awk '{print $1}')
+
+  echo -e "terminating $1 / process(es):\n$pid"
+
+  kill -SIGTERM $pid
+}
